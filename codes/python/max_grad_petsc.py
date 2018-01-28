@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from __future__ import division
 import sys
 import time
@@ -36,11 +36,11 @@ data = dm.createGlobalVector()
 def initialise(dm, field):
     field_ = dm.getVecArray(field)
     (zs, ze), (ys, ye), (xs, xe) = dm.getRanges()
-    procsalong = dm.getProcSizes()
+    sizes = dm.getSizes()
     for z in range(zs,ze):
         for y in range(ys,ye):
-            start = (xs + (xe-xs)*(y)*procsalong[2] +
-                     (ye-ys)*(xe-xs)*(z)*procsalong[1]*procsalong[2])
+            start = (xs + (y)*sizes[2] +
+                     (z)*sizes[1]*sizes[2])
             stop = start + (xe-xs)
             field_[z,y,:] = numpy.arange(start, stop, step=1)**2
     return
@@ -51,10 +51,8 @@ def compute_grad(dm, field, dmgrad, grad):
     field_array = dm.getVecArray(local_field)
     grad_array = dmgrad.getVecArray(grad)
     temp=numpy.array(numpy.gradient(field_array[:]))[:,1:-1,1:-1,1:-1]
-    gradients=numpy.zeros(temp.shape[1:]+(temp.shape[0],))
     for coo in [0,1,2]:
-        gradients[:,:,:,coo] = temp[coo][:,:,:]
-    grad_array[:] = gradients[:,:,:,:]
+        grad_array[:,:,:,coo] = temp[coo][:,:,:]
 
 dmgrad = PETSc.DMDA().create(dim=3, sizes = dm.sizes,
                              proc_sizes=dm.proc_sizes,
@@ -68,6 +66,10 @@ grads = dmgrad.createGlobalVector()
 initialise(dm, data)
 compute_grad(dm, data, dmgrad, grads)
 maxgrad=grads.max()
-if PETSc.COMM_WORLD.rank == 0:
-    print("Global maximum of the gradient was {maxgrad}.".format(
-        maxgrad=maxgrad))
+dm_x,dm_y,dm_z = dm.getSizes()
+PETSc.Sys.syncPrint("Your grid shape was {} x {} x {}".format(dm_x, dm_y, dm_z))
+PETSc.Sys.syncPrint("Global maximum of the gradient was {maxgrad}.".format(
+    maxgrad=maxgrad))
+PETSc.Sys.syncPrint("The result is {}.".format(
+    ["incorrect", "correct"][maxgrad[1] == 2*dm.sizes[2]*dm.sizes[1]*(
+        -1+dm.sizes[2]*dm.sizes[1]*(dm.sizes[0]-1))]))
